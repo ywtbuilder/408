@@ -371,7 +371,7 @@ function renderQueue() {
   const w = canvasContainer.clientWidth || 800;
   const h = canvasContainer.clientHeight || 500;
 
-  const centerY = h / 2 - 30;
+  const centerY = h / 2 - 15;
   const spacing = 70; // Horizontal gap between nodes
 
   // Filter nodes currently in the main structure
@@ -541,29 +541,23 @@ function drawArrow(fromNode, toNode, isCurved, isActive) {
   const isSelfLoop = (fromNode.id === toNode.id);
 
   if (isSelfLoop) {
-    // Single node loops back to itself over the top
+    // Single node loops back above itself and lands on the top edge to avoid covering the value.
     const startX = fromNode.x + 80;
-    const startY = fromNode.y + 24;
-    const cp1x = fromNode.x + 120;
-    const cp1y = fromNode.y - 45;
-    const cp2x = fromNode.x - 20;
-    const cp2y = fromNode.y - 45;
-    const endX = fromNode.x;
-    const endY = fromNode.y + 24;
+    const startY = fromNode.y + 18;
+    const endX = fromNode.x + 20;
+    const endY = fromNode.y;
+    const archTop = Math.max(18, fromNode.y - 92);
 
-    pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+    pathD = `M ${startX} ${startY} C ${fromNode.x + 132} ${archTop}, ${fromNode.x - 34} ${archTop}, ${endX} ${endY}`;
   } else if (isCurved) {
     // Loop back from tail to head (e.g. from right to left)
-    const ex = toNode.x;
-    const ey = toNode.y + 24;
+    const ex = toNode.x + 22;
+    const ey = toNode.y;
+    const archTop = Math.max(22, Math.min(fromNode.y, toNode.y) - 105);
+    const cp1x = sx + 10;
+    const cp2x = ex - 10;
 
-    // Cubic bezier curve that arches over the top of the intermediate nodes
-    const cp1x = sx;
-    const cp1y = sy - 90;
-    const cp2x = ex;
-    const cp2y = ey - 90;
-
-    pathD = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${ex} ${ey}`;
+    pathD = `M ${sx} ${sy} C ${cp1x} ${archTop}, ${cp2x} ${archTop}, ${ex} ${ey}`;
   } else {
     // Normal sequential arrow pointing to the right or to a floating node
     const ex = toNode.x;
