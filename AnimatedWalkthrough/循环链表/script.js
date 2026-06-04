@@ -15,6 +15,7 @@ let playTimer = null;
 let animSpeed = 1500; // ms per step
 let nodeIdCounter = 0;
 let actionValue = 10; // default initial input value
+let animationSnapshot = null;
 
 // DOM Elements
 const canvasContainer = document.getElementById('canvas-container');
@@ -109,6 +110,31 @@ function clearAll() {
 function createNodeId() {
   nodeIdCounter++;
   return `node-${nodeIdCounter}`;
+}
+
+function stageTempNode(hasData = true) {
+  nodes.push({ id: 'temp-q', value: hasData ? actionValue : '?', isDummy: false });
+}
+
+function captureAnimationSnapshot() {
+  return {
+    nodes: nodes.map(node => ({ ...node })),
+    pPointer,
+    nodeIdCounter,
+    inputValue: inputVal.value
+  };
+}
+
+function restoreAnimationSnapshot() {
+  if (!animationSnapshot) return;
+  nodes = animationSnapshot.nodes.map(node => ({ ...node }));
+  pPointer = animationSnapshot.pPointer;
+  nodeIdCounter = animationSnapshot.nodeIdCounter;
+  inputVal.value = animationSnapshot.inputValue;
+}
+
+function finishEnqueueInputAdvance() {
+  inputVal.value = (actionValue + 10) % 100;
 }
 
 // Set mode (With or Without Dummy Head)
@@ -608,6 +634,7 @@ function updateStatusText() {
 // Playback State Machine Controls
 function setSimulationState(action, stepList) {
   stopSimulation();
+  animationSnapshot = captureAnimationSnapshot();
   currentAction = action;
   steps = stepList;
   currentStepIndex = 0;
@@ -633,8 +660,11 @@ function stopSimulation() {
   btnPrev.disabled = true;
   btnNext.disabled = true;
 
-  // Clean up any remaining animation temp-node structures
-  nodes = nodes.filter(n => n.id !== 'temp-q');
+  if (currentAction !== 'idle' && animationSnapshot && currentStepIndex < steps.length - 1) {
+    restoreAnimationSnapshot();
+  } else {
+    nodes = nodes.filter(n => n.id !== 'temp-q');
+  }
 
   // Restore correct pointers
   if (currentAction !== 'idle') {
@@ -731,9 +761,7 @@ function startEnqueue() {
     return;
   }
 
-  // Increment input value for user convenience
   actionValue = val;
-  inputVal.value = (val + 10) % 100;
 
   addLog(`开始入队演示：值 = <b>${actionValue}</b>`, 'info');
 
@@ -744,7 +772,6 @@ function startEnqueue() {
     // Mode: Without Dummy Head
     // ---------------------------------
     const isQueueEmpty = (pPointer === null);
-    let newId = 'temp-q'; // ID of the allocated node
 
     // Step 1: void Enqueue(Node*& p, int x)
     stepList.push({
@@ -756,27 +783,39 @@ function startEnqueue() {
       }
     });
 
-    // Step 2: Node* q = new Node(x);
+    // Step 2: LNode* q = new LNode;
     stepList.push({
       codeLine: 1,
-      log: `申请一个新结点 q，其数据域为 ${actionValue}，指针域为 nullptr。`,
+      log: `申请一个新结点 q。此时只是拿到结点空间，data 还没有写入。`,
       action: () => {
         resetStateBeforeAnimation();
-        // Add new node q in staging area
-        nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+        stageTempNode(false);
         tempPointers = { q: 'temp-q' };
         activeNodes = ['temp-q'];
         activeLines = [];
       }
     });
 
-    // Step 3: if (p == nullptr) {
+    // Step 3: q->data = x;
     stepList.push({
       codeLine: 2,
+      log: `执行 q->data = x，将 ${actionValue} 写入 q 的数据域。`,
+      action: () => {
+        resetStateBeforeAnimation();
+        stageTempNode();
+        tempPointers = { q: 'temp-q' };
+        activeNodes = ['temp-q'];
+        activeLines = [];
+      }
+    });
+
+    // Step 4: if (p == nullptr) {
+    stepList.push({
+      codeLine: 3,
       log: `检查尾指针 p 是否为空。当前 p 为 ${isQueueEmpty ? 'nullptr (队列为空)' : '有效地址 (队列非空)'}。`,
       action: () => {
         resetStateBeforeAnimation();
-        nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+        stageTempNode();
         tempPointers = { q: 'temp-q' };
         activeNodes = isQueueEmpty ? ['temp-q'] : ['temp-q', pPointer];
         activeLines = [];
@@ -785,13 +824,13 @@ function startEnqueue() {
 
     if (isQueueEmpty) {
       // Subpath: Queue is empty
-      // Step 4: q->next = q;
+      // Step 5: q->next = q;
       stepList.push({
-        codeLine: 3,
+        codeLine: 4,
         log: `因为队列为空，将新结点 q 的 next 指针指向自身，构成单结点循环。`,
         action: () => {
           resetStateBeforeAnimation();
-          nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+          stageTempNode();
           tempPointers = { q: 'temp-q' };
           activeNodes = ['temp-q'];
           // Arrow pointing to itself
@@ -799,9 +838,9 @@ function startEnqueue() {
         }
       });
 
-      // Step 5: p = q;
+      // Step 6: p = q;
       stepList.push({
-        codeLine: 4,
+        codeLine: 5,
         log: `将尾指针 p 指向新加入的结点 q。现在 p 既是队尾也是队头。`,
         action: () => {
           resetStateBeforeAnimation();
@@ -812,17 +851,18 @@ function startEnqueue() {
           tempPointers = { q: finalId };
           activeNodes = [finalId];
           activeLines = []; // Standard rendering will loop this node automatically
+          finishEnqueueInputAdvance();
         }
       });
     } else {
       // Subpath: Queue is NOT empty
-      // Step 4: LNode* r = p->next;
+      // Step 5: LNode* r = p->next;
       stepList.push({
         codeLine: 7,
         log: `队列非空，用辅助指针 r 指向当前的队头结点（即 p->next）。`,
         action: () => {
           resetStateBeforeAnimation();
-          nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+          stageTempNode();
 
           // Current head node is p->next in circular array
           const headNode = getNextNodeInCircle(pPointer);
@@ -832,13 +872,13 @@ function startEnqueue() {
         }
       });
 
-      // Step 5: p->next = q;
+      // Step 6: p->next = q;
       stepList.push({
         codeLine: 8,
         log: `修改队尾结点 p 的 next，使其指向新结点 q。暂时打破原来的环。`,
         action: () => {
           resetStateBeforeAnimation();
-          nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+          stageTempNode();
           const headNode = getNextNodeInCircle(pPointer);
           tempPointers = { q: 'temp-q', r: headNode.id };
           activeNodes = ['temp-q', pPointer];
@@ -848,13 +888,13 @@ function startEnqueue() {
         }
       });
 
-      // Step 6: q->next = r;
+      // Step 7: q->next = r;
       stepList.push({
         codeLine: 9,
         log: `将新节点 q 的 next 指向记录好的旧队头 r，让新结点成为队尾，且重新闭合循环环路。`,
         action: () => {
           resetStateBeforeAnimation();
-          nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+          stageTempNode();
           const headNode = getNextNodeInCircle(pPointer);
           tempPointers = { q: 'temp-q', r: headNode.id };
           activeNodes = ['temp-q', headNode.id];
@@ -867,7 +907,7 @@ function startEnqueue() {
         }
       });
 
-      // Step 7: p = q;
+      // Step 8: p = q;
       stepList.push({
         codeLine: 10,
         log: `更新尾指针 p，使其移动并指向新加入的队尾结点 q。入队操作结束！`,
@@ -885,6 +925,7 @@ function startEnqueue() {
           tempPointers = { q: finalId };
           activeNodes = [finalId];
           activeLines = []; // Clear custom lines, automatic rendering takes over
+          finishEnqueueInputAdvance();
         }
       });
     }
@@ -901,26 +942,39 @@ function startEnqueue() {
       }
     });
 
-    // Step 2: Node* q = new Node(x);
+    // Step 2: LNode* q = new LNode;
     stepList.push({
       codeLine: 1,
-      log: `申请新结点 q，数据域设为 ${actionValue}，指针域为 nullptr。`,
+      log: `申请新结点 q。此时只是拿到结点空间，data 还没有写入。`,
       action: () => {
         resetStateBeforeAnimation();
-        nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+        stageTempNode(false);
         tempPointers = { q: 'temp-q' };
         activeNodes = ['temp-q'];
         activeLines = [];
       }
     });
 
-    // Step 3: Node* r = p->next;
+    // Step 3: q->data = x;
     stepList.push({
       codeLine: 2,
+      log: `执行 q->data = x，将 ${actionValue} 写入 q 的数据域。`,
+      action: () => {
+        resetStateBeforeAnimation();
+        stageTempNode();
+        tempPointers = { q: 'temp-q' };
+        activeNodes = ['temp-q'];
+        activeLines = [];
+      }
+    });
+
+    // Step 4: Node* r = p->next;
+    stepList.push({
+      codeLine: 3,
       log: `用临时指针 r 记录当前的队头。这里 p->next 必定指向头结点（无论队列是否为空）。`,
       action: () => {
         resetStateBeforeAnimation();
-        nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+        stageTempNode();
         const headNode = getNextNodeInCircle(pPointer); // In circular list, p->next is always dummy head
         tempPointers = { q: 'temp-q', r: headNode.id };
         activeNodes = ['temp-q', pPointer, headNode.id];
@@ -928,13 +982,13 @@ function startEnqueue() {
       }
     });
 
-    // Step 4: p->next = q;
+    // Step 5: p->next = q;
     stepList.push({
-      codeLine: 3,
+      codeLine: 4,
       log: `将尾指针 p 指向的结点的 next 指向新结点 q。暂时切断指向头结点的回路。`,
       action: () => {
         resetStateBeforeAnimation();
-        nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+        stageTempNode();
         const headNode = getNextNodeInCircle(pPointer);
         tempPointers = { q: 'temp-q', r: headNode.id };
         activeNodes = [pPointer, 'temp-q'];
@@ -944,13 +998,13 @@ function startEnqueue() {
       }
     });
 
-    // Step 5: q->next = r;
+    // Step 6: q->next = r;
     stepList.push({
-      codeLine: 4,
+      codeLine: 5,
       log: `将新结点 q 的 next 指针指向记录好的头结点 r，重新链接回循环链表。`,
       action: () => {
         resetStateBeforeAnimation();
-        nodes.push({ id: 'temp-q', value: actionValue, isDummy: false });
+        stageTempNode();
         const headNode = getNextNodeInCircle(pPointer);
         tempPointers = { q: 'temp-q', r: headNode.id };
         activeNodes = ['temp-q', headNode.id];
@@ -962,9 +1016,9 @@ function startEnqueue() {
       }
     });
 
-    // Step 6: p = q;
+    // Step 7: p = q;
     stepList.push({
-      codeLine: 5,
+      codeLine: 6,
       log: `更新尾指针 p 指向新入队的队尾结点 q。带头结点的入队完成，操作非常统一。`,
       action: () => {
         resetStateBeforeAnimation();
@@ -979,6 +1033,7 @@ function startEnqueue() {
         tempPointers = { q: finalId };
         activeNodes = [finalId];
         activeLines = [];
+        finishEnqueueInputAdvance();
       }
     });
   }
@@ -1229,29 +1284,8 @@ function resetStateBeforeAnimation() {
   activeLines = [];
   activeNodes = [];
 
-  // Rebuild standard list based on queueMode and active items
-  // Since we only change actual queue state on the VERY LAST STEP of enqueue/dequeue,
-  // we can reconstruct baseline queue elements from current state or action value.
-  if (currentAction === 'enqueue') {
-    // Baseline is nodes WITHOUT the new node
-    nodes = nodes.filter(n => n.id !== 'temp-q' && n.id.startsWith('node-'));
-
-    // Re-establish pPointer to correct rear node
-    if (nodes.length > 0) {
-      if (queueMode) {
-        // Last node in nodes list (since dummy head is index 0)
-        pPointer = nodes[nodes.length - 1].id;
-      } else {
-        pPointer = nodes[nodes.length - 1].id;
-      }
-    } else {
-      pPointer = null;
-    }
-  } else if (currentAction === 'dequeue') {
-    // For dequeue, baseline is nodes BEFORE deletion.
-    // The deletion only commits at the very last step. So nodes array STILL CONTAINS the node.
-    // However, if we are in the middle of replay, we don't modify nodes yet.
-    // So nodes is already in baseline state!
+  if (currentAction === 'enqueue' || currentAction === 'dequeue') {
+    restoreAnimationSnapshot();
   }
 }
 
