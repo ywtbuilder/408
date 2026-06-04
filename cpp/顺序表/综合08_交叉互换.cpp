@@ -1,4 +1,4 @@
-void reverse(ElemType A[], int m, int n){
+void Reverse(ElemType A[], int m, int n){
     ElemType temp[MAXSIZE];
     int j=0;
     
