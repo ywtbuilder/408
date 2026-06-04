@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>循环链表队列演示 - 408数据结构考研算法演示</title>
+  <meta name="description" content="带尾指针的循环链表队列入队和出队操作步进动画演示，直观理解408数据结构真题考点。">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header>
+    <h1>循环链表队列演示</h1>
+
+    <!-- Controls -->
+    <div class="controls-container">
+      <!-- Mode Toggle -->
+      <div class="control-group">
+        <span class="control-label">模式</span>
+        <button id="btn-mode-no-dummy" class="toggle-button active" onclick="setMode(false)">不带头结点</button>
+        <button id="btn-mode-dummy" class="toggle-button" onclick="setMode(true)">带头结点</button>
+      </div>
+
+      <!-- Queue Actions -->
+      <div class="control-group">
+        <span class="control-label">数据</span>
+        <input type="number" id="input-val" class="input-field" value="10" min="0" max="99">
+        <button id="btn-enqueue" class="btn" onclick="startEnqueue()">入队 (Enqueue)</button>
+        <button id="btn-dequeue" class="btn btn-secondary" onclick="startDequeue()">出队 (Dequeue)</button>
+      </div>
+
+      <!-- Playback Controls -->
+      <div class="control-group">
+        <span class="control-label">调试播放</span>
+        <div class="sim-controls">
+          <button id="btn-reset" class="icon-btn" onclick="resetQueue()" title="重置队列">↺</button>
+          <button id="btn-prev" class="icon-btn" onclick="prevStep()" title="上一步" disabled>◀</button>
+          <button id="btn-play" class="icon-btn" onclick="togglePlay()" title="自动播放/暂停">▶</button>
+          <button id="btn-next" class="icon-btn" onclick="nextStep()" title="下一步" disabled>▶</button>
+        </div>
+        <div class="slider-container">
+          <span style="font-size: 0.75rem; color: var(--text-muted)">速度</span>
+          <input type="range" id="slider-speed" class="slider" min="500" max="3000" value="1500" step="100">
+        </div>
+      </div>
+
+      <button class="btn btn-danger" onclick="clearAll()" style="padding: 0.4rem 0.75rem;">清空</button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="workspace">
+
+    <!-- Visual Canvas Section -->
+    <section class="canvas-section">
+      <div class="canvas-header">
+        <span id="queue-status-text">队列当前状态: 空队列</span>
+        <span id="step-explanation" style="font-weight: 500; color: #f59e0b; max-width: 50%; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">系统就绪</span>
+        <span style="font-family: 'Fira Code', monospace; color: var(--color-p);">尾指针 p 指向队尾</span>
+      </div>
+
+      <div class="canvas-container" id="canvas-container">
+        <!-- SVG for lines and arrows -->
+        <svg class="svg-overlay" id="svg-overlay">
+          <defs>
+            <!-- Normal Arrow Marker -->
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" class="arrow-marker" />
+            </marker>
+            <!-- Active Arrow Marker -->
+            <marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" class="arrow-marker active" />
+            </marker>
+            <!-- Temp Pointer Arrow Marker -->
+            <marker id="arrow-temp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" class="arrow-marker temp" />
+            </marker>
+            <!-- Pointer Specific Markers -->
+            <marker id="arrow-p" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#f43f5e" />
+            </marker>
+            <marker id="arrow-q" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+            </marker>
+            <marker id="arrow-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
+            </marker>
+            <marker id="arrow-t" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+            </marker>
+            <marker id="arrow-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#8b5cf6" />
+            </marker>
+          </defs>
+        </svg>
+
+        <!-- Pointers container (e.g. p, q, r labels) -->
+        <div id="pointer-labels-container"></div>
+
+        <!-- Nodes container -->
+        <div id="nodes-container"></div>
+      </div>
+    </section>
+
+    <!-- Sidebar: Code Execution & Logs -->
+    <aside class="sidebar">
+
+      <!-- Code View -->
+      <div class="code-section" style="height: 100%;">
+        <div class="panel-header">
+          <span>C++ 算法代码追踪</span>
+          <span id="active-op-label" style="color: #22d3ee; font-weight: normal;">就绪</span>
+        </div>
+        <div class="code-container notranslate" id="code-container" translate="no">
+          <!-- Will be dynamically populated with enqueue/dequeue code -->
+          <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 2rem;">
+            请点击 [入队] 或 [出队] 按钮开始算法步骤追踪
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
